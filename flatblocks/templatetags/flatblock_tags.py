@@ -5,9 +5,9 @@ into a template.
 
 It accepts 2 parameter:
 
-    slug
-        The slug/key of the text (for example 'contact_help'). There are two
-        ways you can pass the slug to the templatetag: (1) by its name or
+    namespace
+        The namespace/key of the text (for example 'contact_help'). There are two
+        ways you can pass the namespace to the templatetag: (1) by its name or
         (2) as a variable.
 
         If you want to pass it by name, you have to use quotes on it.
@@ -35,7 +35,7 @@ The 'flatblock' template tag acts like an inclusiontag and operates on the
 context) also the ``flatblock`` variable passed.
 
 Compared to the original implementation this includes not only the block's
-content but the whole object inclusing title, slug and id. This way you
+content but the whole object inclusing title, namespace and id. This way you
 can easily for example offer administrative operations (like editing)
 within that template.
 
@@ -69,10 +69,10 @@ class BasicFlatBlockWrapper(object):
         tokens = token.split_contents()
         self.is_variable = False
         self.tpl_is_variable = False
-        self.slug = None
+        self.namespace = None
         self.cache_time = 0
         self.tpl_name = None
-        tag_name, self.slug, args = tokens[0], tokens[1], tokens[2:]
+        tag_name, self.namespace, args = tokens[0], tokens[1], tokens[2:]
         num_args = len(args)
         if num_args == 0:
             # Only the block name was specified
@@ -90,11 +90,11 @@ class BasicFlatBlockWrapper(object):
             self.tpl_name = args[2]
         else:
             raise template.TemplateSyntaxError, "%r tag should have between 1 and 4 arguments" % (tokens[0],)
-        # Check to see if the slug is properly double/single quoted
-        if not (self.slug[0] == self.slug[-1] and self.slug[0] in ('"', "'")):
+        # Check to see if the namespace is properly double/single quoted
+        if not (self.namespace[0] == self.namespace[-1] and self.namespace[0] in ('"', "'")):
             self.is_variable = True
         else:
-            self.slug = self.slug[1:-1]
+            self.namespace = self.namespace[1:-1]
         # Clean up the template name
         if self.tpl_name is not None:
             if not(self.tpl_name[0] == self.tpl_name[-1] and self.tpl_name[0] in ('"', "'")):
@@ -106,20 +106,20 @@ class BasicFlatBlockWrapper(object):
 
     def __call__(self, parser, token):
         self.prepare(parser, token)
-        return FlatBlockNode(self.slug, self.is_variable, self.cache_time,
+        return FlatBlockNode(self.namespace, self.is_variable, self.cache_time,
                 template_name=self.tpl_name,
                 tpl_is_variable=self.tpl_is_variable)
 
 class PlainFlatBlockWrapper(BasicFlatBlockWrapper):
     def __call__(self, parser, token):
         self.prepare(parser, token)
-        return FlatBlockNode(self.slug, self.is_variable, self.cache_time, False)
+        return FlatBlockNode(self.namespace, self.is_variable, self.cache_time, False)
 
 do_get_flatblock = BasicFlatBlockWrapper()
 do_plain_flatblock = PlainFlatBlockWrapper()
 
 class FlatBlockNode(template.Node):
-    def __init__(self, slug, is_variable, cache_time=0, with_template=True,
+    def __init__(self, namespace, is_variable, cache_time=0, with_template=True,
             template_name=None, tpl_is_variable=False):
         if template_name is None:
             self.template_name = 'flatblocks/flatblock.html'
@@ -128,16 +128,16 @@ class FlatBlockNode(template.Node):
                 self.template_name = template.Variable(template_name)
             else:
                 self.template_name = template_name
-        self.slug = slug
+        self.namespace = namespace
         self.is_variable = is_variable
         self.cache_time = cache_time
         self.with_template = with_template
 
     def render(self, context):
         if self.is_variable:
-            real_slug = template.Variable(self.slug).resolve(context)
+            real_namespace = template.Variable(self.namespace).resolve(context)
         else:
-            real_slug = self.slug
+            real_namespace = self.namespace
         if isinstance(self.template_name, template.Variable):
             real_template = self.template_name.resolve(context)
         else:
@@ -150,32 +150,32 @@ class FlatBlockNode(template.Node):
         try:
             flatblock = None
             if self.cache_time != 0:
-                cache_key = settings.CACHE_PREFIX + real_slug
+                cache_key = settings.CACHE_PREFIX + real_namespace
                 flatblock = cache.get(cache_key)
             if flatblock is None:
 
-                # if flatblock's slug is hard-coded in template then it is
+                # if flatblock's namespace is hard-coded in template then it is
                 # safe and convenient to auto-create block if it doesn't exist.
                 # This behaviour can be configured using the
                 # FLATBLOCKS_AUTOCREATE_STATIC_BLOCKS setting
                 if self.is_variable or not settings.AUTOCREATE_STATIC_BLOCKS:
-                    flatblock = FlatBlock.objects.get(slug=real_slug)
+                    flatblock = FlatBlock.objects.get(namespace=real_namespace)
                 else:
                     flatblock, _ = FlatBlock.objects.get_or_create(
-                                      slug=real_slug,
-                                      defaults = {'content': real_slug}
+                                      namespace=real_namespace,
+                                      defaults = {'content': real_namespace}
                                    )
                 if self.cache_time != 0:
                     if self.cache_time is None or self.cache_time == 'None':
                         logger.debug("Caching %s for the cache's default timeout"
-                                % (real_slug,))
+                                % (real_namespace,))
                         cache.set(cache_key, flatblock)
                     else:
-                        logger.debug("Caching %s for %s seconds" % (real_slug,
+                        logger.debug("Caching %s for %s seconds" % (real_namespace,
                             str(self.cache_time)))
                         cache.set(cache_key, flatblock, int(self.cache_time))
                 else:
-                    logger.debug("Don't cache %s" % (real_slug,))
+                    logger.debug("Don't cache %s" % (real_namespace,))
 
             if self.with_template:
                 tmpl = loader.get_template(real_template)
